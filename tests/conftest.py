@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
@@ -7,18 +9,29 @@ import app.models  # noqa: F401  (register tables for create_all)
 from app.api.deps import get_messenger
 from app.main import app
 from app.core.config import Settings, get_settings
-from app.core.db import get_session
+from app.core.db import engine_options, get_session
 from app.services import billing
 from tests.support import CUSTOMER, SECRET, FakeKapso
 
 
 @pytest.fixture
 def engine():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+    # TEST_DATABASE_URL runs the suite against a real database (CI uses Postgres);
+    # otherwise each test gets a fresh in-memory SQLite.
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if database_url:
+        database_url = Settings.normalize_database_url(database_url)
+        engine = create_engine(database_url, **engine_options(database_url))
+        SQLModel.metadata.drop_all(engine)
+    else:
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
     SQLModel.metadata.create_all(engine)
-    return engine
+    yield engine
+    if database_url:
+        SQLModel.metadata.drop_all(engine)
+    engine.dispose()
 
 
 @pytest.fixture

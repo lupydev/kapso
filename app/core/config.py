@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,8 +14,18 @@ class Settings(BaseSettings):
     kapso_api_base_url: str = "https://api.kapso.ai"
     public_base_url: str
     database_url: str = "sqlite:///db.sqlite3"
+
     # /admin is disabled unless this is set.
     admin_password: str | None = None
+
+    @field_validator("database_url")
+    @classmethod
+    def normalize_database_url(cls, url: str) -> str:
+        # Hosts like Railway hand out postgres:// or postgresql:// URLs; point them at psycopg (v3).
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url.removeprefix(prefix)
+        return url
 
 
 @lru_cache
