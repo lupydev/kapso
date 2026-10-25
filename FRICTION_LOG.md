@@ -91,3 +91,8 @@ Severity: **H** blocks an agent, **M** costs a human or agent time, **L** cosmet
 
 ### Reliability test result (positive)
 - Replaying the real signed `whatsapp.message.received` for an already-processed `wamid` three times through the tunnel returned `200 {"status":"duplicate"}` each time, and Kapso shows no new outbound messages. Kapso's retries + message-id dedup worked as documented once the handler separated permanent from transient failures.
+
+### F14 — Docs show the inbound `button_reply` payload but not `list_reply` (L)
+- **What**: The webhook event docs (`docs/platform/webhooks/message-events#interactive-messages`) and the `integrate-whatsapp` skill reference only show `interactive.button_reply`. Sending list messages is documented, but what comes back when a customer picks a row isn't. I built against Meta's standard `interactive.list_reply.{id,title,description}`, and it worked end to end.
+- **Evidence**: docs MCP search for "list_reply inbound interactive" returned only `button_reply` examples; the live customer pick was processed by the `list_reply` handler.
+- **Impact**: An agent that only trusts Kapso's docs either guesses or drops list replies.
