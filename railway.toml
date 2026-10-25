@@ -3,6 +3,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+# Runs inside the private network before each deploy; idempotent, and a no-op without SEED_PHONE.
+preDeployCommand = ["python -m app.seed"]
 healthcheckPath = "/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"

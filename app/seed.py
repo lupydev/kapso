@@ -1,6 +1,11 @@
-"""Seed demo invoices for a customer: `uv run python -m app.seed --phone +573001112233`."""
+"""Seed demo invoices for a customer.
+
+Locally: `uv run python -m app.seed --phone +573001112233`.
+On Railway it runs as the pre-deploy command and reads the number from SEED_PHONE.
+"""
 
 import argparse
+import os
 
 from sqlmodel import Session, select
 
@@ -34,9 +39,17 @@ def seed_demo_invoices(session: Session, phone_number: str, currency: str = "COP
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--phone", required=True, help="Customer WhatsApp number, e.g. +573001112233")
+    parser.add_argument(
+        "--phone",
+        default=os.environ.get("SEED_PHONE"),
+        help="Customer WhatsApp number, e.g. +573001112233 (default: $SEED_PHONE)",
+    )
     parser.add_argument("--currency", default="COP")
     args = parser.parse_args()
+    if not args.phone:
+        # Pre-deploy runs this on every deploy; without a number there is nothing to seed.
+        print("SEED_PHONE not set; nothing to seed")
+        return
     with Session(get_engine()) as session:
         created = seed_demo_invoices(session, args.phone, args.currency)
     print(f"Created {len(created)} invoices" if created else "Customer already has invoices; nothing created")
