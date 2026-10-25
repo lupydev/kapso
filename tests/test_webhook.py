@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
+from app import billing
 from app.config import Settings, get_settings
 from app.db import Invoice, PaymentLink, get_session
 from app.kapso import KapsoError, get_kapso
@@ -195,3 +196,55 @@ def test_failed_send_returns_500_so_kapso_retries(client, kapso):
     assert failed.status_code == 500
     assert retried.status_code == 200
     assert len(kapso.sent) == 1
+
+
+def test_concurrent_confirms_send_one_receipt(tmp_path, kapso):
+    # File-backed DB so each session has its own connection, like two real requests.
+    engine = create_engine(f"sqlite:///{tmp_path / 'race.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        invoice = Invoice(phone_number=CUSTOMER, amount_cents=100, currency="COP")
+        session.add(invoice)
+        session.flush()
+        session.add(PaymentLink(invoice_id=invoice.id))
+        session.commit()
+
+    # Both requests read the invoice as pending before either commits (double click).
+    with Session(engine) as first, Session(engine) as second:
+        link = first.exec(select(PaymentLink)).one()
+        # Keep references: the sessions' identity maps hold these stale reads.
+        seen_by_first = first.get(Invoice, link.invoice_id)
+        seen_by_second = second.get(Invoice, link.invoice_id)
+        assert seen_by_first.status == seen_by_second.status == "pending"
+        billing.confirm_payment(first, kapso, link)
+        first.commit()
+        billing.confirm_payment(second, kapso, link)
+        second.commit()
+
+    receipts = [m for m in kapso.sent if "Payment received" in m["body"]]
+    assert len(receipts) == 1
+
+
+@pytest.mark.parametrize("signature", ["", "ñ" * 64, "not-hex", "A" * 64])
+def test_malformed_signatures_are_rejected(client, kapso, signature):
+    response = client.post(
+        "/webhooks/kapso",
+        content=b"{}",
+        headers={"X-Webhook-Event": "whatsapp.message.received", "X-Webhook-Signature": signature.encode()},
+    )
+
+    assert response.status_code == 401
+    assert kapso.sent == []
+
+
+def test_unparseable_signed_payload_is_acknowledged(client, kapso):
+    raw = b"not json"
+    signature = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    response = client.post(
+        "/webhooks/kapso",
+        content=raw,
+        headers={"X-Webhook-Event": "whatsapp.message.received", "X-Webhook-Signature": signature},
+    )
+
+    assert response.status_code == 400
+    assert kapso.sent == []

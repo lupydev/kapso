@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from html import escape
 from typing import Annotated
 
@@ -24,8 +25,12 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 KapsoDep = Annotated[Messenger, Depends(get_kapso)]
 
 
+SIGNATURE_FORMAT = re.compile(r"[0-9a-f]{64}")
+
+
 def _valid_signature(secret: str, body: bytes, signature: str | None) -> bool:
-    if not signature:
+    # Check the shape first: compare_digest raises on non-ASCII input.
+    if not signature or not SIGNATURE_FORMAT.fullmatch(signature):
         return False
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
@@ -55,9 +60,14 @@ def kapso_webhook(
     if x_webhook_event != "whatsapp.message.received":
         return {"status": "ignored"}
 
-    event = json.loads(body)
-    message = event["message"]
-    phone_number = event["conversation"]["phone_number"]
+    try:
+        event = json.loads(body)
+        message = event["message"]
+        phone_number = event["conversation"]["phone_number"]
+    except (ValueError, KeyError, TypeError):
+        # Signed but unusable: retrying won't fix it, so answer 4xx instead of 500.
+        logger.warning("Ignoring malformed webhook payload")
+        raise HTTPException(status_code=400, detail="malformed payload")
 
     # Claim the message ID and do the work in one transaction: a failed send rolls the
     # claim back and returns 500, so Kapso's retry processes it; a duplicate hits the key.

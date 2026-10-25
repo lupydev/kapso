@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
 from app.config import Settings
 from app.db import Invoice, PaymentLink
@@ -71,11 +71,14 @@ def current_invoice_for_link(session: Session, link: PaymentLink) -> Invoice:
 
 def confirm_payment(session: Session, messenger: Messenger, link: PaymentLink) -> Invoice:
     """Mark the invoice paid; only the first confirmation notifies the customer."""
-    invoice = session.get(Invoice, link.invoice_id)
-    if invoice.status != "paid":
-        invoice.status = "paid"
-        invoice.paid_at = datetime.now(UTC)
-        session.add(invoice)
-        session.flush()
+    # Conditional update instead of read-then-write: under concurrent confirms (double
+    # click) only one UPDATE matches a pending row, so only that request sends a receipt.
+    result = session.exec(
+        update(Invoice)
+        .where(Invoice.id == link.invoice_id, Invoice.status != "paid")
+        .values(status="paid", paid_at=datetime.now(UTC))
+    )
+    invoice = session.get(Invoice, link.invoice_id, populate_existing=True)
+    if result.rowcount == 1:
         messenger.send_text(invoice.phone_number, f"Payment received: {format_amount(invoice)}. Thank you!")
     return invoice
