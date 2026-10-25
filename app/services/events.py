@@ -1,3 +1,4 @@
+import json
 import logging
 
 from sqlmodel import Session, select
@@ -35,3 +36,11 @@ def record_webhook(
 
 def recent_webhooks(session: Session, limit: int = 50) -> list[WebhookEvent]:
     return list(session.exec(select(WebhookEvent).order_by(WebhookEvent.id.desc()).limit(limit)).all())
+
+
+def pretty_payload(payload: str) -> str:
+    """Indented JSON for display; anything that isn't JSON (or was truncated) is shown as stored."""
+    try:
+        return json.dumps(json.loads(payload), indent=2, ensure_ascii=False)
+    except ValueError:
+        return payload

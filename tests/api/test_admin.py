@@ -46,3 +46,25 @@ def test_admin_escapes_customer_content(client, seed):
 
     assert "<script>" not in page.text and "<b>bold</b>" not in page.text
     assert "&lt;b&gt;bold&lt;/b&gt;" in page.text
+
+
+@pytest.mark.usefixtures("admin_enabled")
+def test_admin_pretty_prints_json_payloads(client):
+    post_event(client, inbound("wamid.1", text="hola"))
+
+    page = client.get("/admin", auth=("admin", PASSWORD))
+
+    # Indented, one key per line, so long payloads wrap inside the page instead of overflowing.
+    assert '\n  &#34;message&#34;: {\n    &#34;id&#34;: &#34;wamid.1&#34;' in page.text
+
+
+@pytest.mark.usefixtures("admin_enabled")
+def test_admin_shows_non_json_payloads_as_is(client):
+    from tests.support import post_raw
+
+    post_raw(client, b"not json")
+
+    page = client.get("/admin", auth=("admin", PASSWORD))
+
+    assert "not json" in page.text
+    assert "malformed" in page.text

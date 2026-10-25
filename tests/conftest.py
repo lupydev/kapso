@@ -28,7 +28,9 @@ def kapso():
 
 @pytest.fixture
 def settings():
+    # _env_file=None: never pick up the developer's real .env / .env.local in tests.
     return Settings(
+        _env_file=None,
         kapso_api_key="k",
         kapso_phone_number_id="123",
         kapso_webhook_secret=SECRET,
