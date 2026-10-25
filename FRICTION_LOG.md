@@ -72,3 +72,22 @@ Severity: **H** blocks an agent, **M** costs a human or agent time, **L** cosmet
 - **Evidence**: MCP `list_whatsapp_messages` since 15:30Z on 2026-10-25; local `processedmessage` table has 2 rows.
 - **Impact**: An agent debugging delivery reads "pending" as "my webhook didn't handle it". It's unclear what the field tracks (Kapso workflows? agents?) and the docs don't say.
 - **Open question**: which consumer is expected to move inbound messages out of `pending` when you use your own webhook.
+
+### F11 — Test webhook delivery targets a recipient the sandbox rejects (M)
+- **What**: MCP `test_whatsapp_webhook` sends a `whatsapp.message.received` sample from `15551234567` (message id `wamid.TEST_…`). A handler that replies gets `403 {"error":"Active sandbox session required to send messages"}` from Kapso, so the "test" exercises the failure path and burns all retries.
+- **Evidence**: delivery `6a622df6-…` (3 attempts, 500, `failed`); my server log showing the 403; `kapso logs search` shows the POST to `/messages` returning 403 for `15551234567`.
+- **Impact**: An agent using the test delivery to check its webhook sees 500s and may "fix" a working handler. There's no way to send a test event to the user's own sandbox session.
+- **Proposal**: let the test delivery target an active sandbox session, or flag the payload as a test (header or `is_test` field) so handlers can skip side effects.
+
+### F12 — Retry schedule differs between the skill and the docs (L)
+- **What**: The `integrate-whatsapp` skill (`references/webhooks-overview.md`) says retries happen at 10s, 40s and 90s (4 attempts). The migration docs say "3 attempts in about 50 seconds". Observed: 3 attempts at +0s, +13s and +54s, then `failed`.
+- **Evidence**: delivery `6a622df6-…` timestamps 12:38:36, 12:38:49, 12:39:30.
+- **Impact**: An agent sizing idempotency windows or timeouts from the skill plans for a 90s retry that never comes.
+
+### F13 — Log search can't find a webhook delivery by its ID (L)
+- **What**: `kapso logs search --query "<delivery id>" --period 24h --source all` returns no events, but searching by the phone number ID returns two `whatsapp_webhook_delivery` events whose `resource_id` is that same delivery ID.
+- **Evidence**: delivery `6a622df6-9992-47a7-93ca-ad8c98dc39d2`.
+- **Impact**: The skill's troubleshooting advice ("search Logs before drilling into per-resource endpoints") fails for the ID an agent is most likely to hold. Minor: `--period` accepts `24h` but rejects `1d`.
+
+### Reliability test result (positive)
+- Replaying the real signed `whatsapp.message.received` for an already-processed `wamid` three times through the tunnel returned `200 {"status":"duplicate"}` each time, and Kapso shows no new outbound messages. Kapso's retries + message-id dedup worked as documented once the handler separated permanent from transient failures.
