@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api.deps import MessengerDep, SessionDep, SettingsDep
 from app.core.security import valid_webhook_signature
 from app.schemas.kapso_webhook import MESSAGE_RECEIVED, MessageReceived
+from app.services import events
 from app.services.inbound import InboundOutcome, handle_message_received
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,23 @@ def verified_body(
     return body
 
 
+def _log_webhook(session, body: bytes, event_type: str | None, outcome: str, status_code: int, event=None) -> None:
+    # The log is for humans; never let it change what Kapso sees (a 500 would cause a retry).
+    try:
+        events.record_webhook(
+            session,
+            body=body,
+            event_type=event_type,
+            outcome=outcome,
+            status_code=status_code,
+            message_id=event.message.id if event else None,
+            phone_number=event.conversation.phone_number if event else None,
+        )
+    except Exception:
+        session.rollback()
+        logger.exception("Could not log webhook event")
+
+
 # Sync handler on purpose: DB and Kapso calls are blocking, so FastAPI runs it in a threadpool.
 @router.post("/kapso")
 def kapso_webhook(
@@ -40,6 +58,7 @@ def kapso_webhook(
     x_webhook_event: Annotated[str | None, Header()] = None,
 ):
     if x_webhook_event != MESSAGE_RECEIVED:
+        _log_webhook(session, body, x_webhook_event, "ignored", 200)
         return {"status": "ignored"}
 
     try:
@@ -48,10 +67,11 @@ def kapso_webhook(
     except ValueError:  # JSONDecodeError, UnicodeDecodeError and ValidationError
         # Signed but unusable: retrying won't fix it, so answer 4xx instead of 500.
         logger.warning("Ignoring malformed webhook payload")
-        raise HTTPException(status_code=400, detail="malformed payload")
+        _log_webhook(session, body, x_webhook_event, "malformed", 400)
+        return JSONResponse({"detail": "malformed payload"}, status_code=400)
 
     outcome = handle_message_received(session, messenger, settings, event)
-    if outcome == InboundOutcome.RETRY:
-        # Non-200 makes Kapso redeliver the same message.
-        return JSONResponse({"status": outcome}, status_code=500)
-    return {"status": outcome}
+    # Non-200 makes Kapso redeliver the same message.
+    status_code = 500 if outcome == InboundOutcome.RETRY else 200
+    _log_webhook(session, body, x_webhook_event, outcome, status_code, event)
+    return JSONResponse({"status": outcome}, status_code=status_code)
