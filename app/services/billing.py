@@ -44,6 +44,10 @@ def pending_invoices(session: Session, phone_number: str) -> list[Invoice]:
     )
 
 
+def all_invoices(session: Session) -> list[Invoice]:
+    return list(session.exec(select(Invoice).order_by(Invoice.id)).all())
+
+
 def get_or_create_payment_link(session: Session, invoice: Invoice) -> PaymentLink:
     link = session.exec(select(PaymentLink).where(PaymentLink.invoice_id == invoice.id)).first()
     if link is None:

@@ -27,19 +27,24 @@ def kapso():
 
 
 @pytest.fixture
-def client(engine, kapso):
+def settings():
+    return Settings(
+        kapso_api_key="k",
+        kapso_phone_number_id="123",
+        kapso_webhook_secret=SECRET,
+        public_base_url="https://example.test",
+    )
+
+
+@pytest.fixture
+def client(engine, kapso, settings):
     def session_override():
         with Session(engine) as session:
             yield session
 
     app.dependency_overrides[get_session] = session_override
     app.dependency_overrides[get_messenger] = lambda: kapso
-    app.dependency_overrides[get_settings] = lambda: Settings(
-        kapso_api_key="k",
-        kapso_phone_number_id="123",
-        kapso_webhook_secret=SECRET,
-        public_base_url="https://example.test",
-    )
+    app.dependency_overrides[get_settings] = lambda: settings
     yield TestClient(app)
     app.dependency_overrides.clear()
 

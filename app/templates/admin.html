@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block width %}72rem{% endblock %}
+{% block content %}
+<h1>Admin</h1>
+
+<h2>Invoices</h2>
+<table>
+  <thead><tr><th>#</th><th>Customer</th><th>Description</th><th>Amount</th><th>Status</th><th>Paid at (UTC)</th></tr></thead>
+  <tbody>
+  {% for invoice, amount in invoices %}
+    <tr>
+      <td>{{ invoice.id }}</td>
+      <td>{{ invoice.phone_number }}</td>
+      <td>{{ invoice.description }}</td>
+      <td>{{ amount }}</td>
+      <td>{{ invoice.status }}</td>
+      <td>{{ invoice.paid_at.strftime("%Y-%m-%d %H:%M:%S") if invoice.paid_at else "" }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No invoices. Seed some with <code>python -m app.seed --phone …</code></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Webhook events <small class="muted">(latest {{ webhooks | length }})</small></h2>
+<table>
+  <thead><tr><th>Received (UTC)</th><th>Event</th><th>Outcome</th><th>HTTP</th><th>Message</th><th>Customer</th><th>Payload</th></tr></thead>
+  <tbody>
+  {% for event in webhooks %}
+    <tr>
+      <td>{{ event.received_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ event.event_type or "" }}</td>
+      <td>{{ event.outcome }}</td>
+      <td>{{ event.status_code }}</td>
+      <td><code>{{ event.message_id or "" }}</code></td>
+      <td>{{ event.phone_number or "" }}</td>
+      <td><details><summary>show</summary><pre><code>{{ event.payload }}</code></pre></details></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No webhook events yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

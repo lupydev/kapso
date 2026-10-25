@@ -12,3 +12,13 @@ def valid_webhook_signature(secret: str, body: bytes, signature: str | None) -> 
         return False
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+ADMIN_USERNAME = "admin"
+
+
+def valid_admin_credentials(expected_password: str, username: str, password: str) -> bool:
+    # Compare both in constant time, and always both, so timing doesn't reveal which was wrong.
+    username_ok = hmac.compare_digest(username.encode(), ADMIN_USERNAME.encode())
+    password_ok = hmac.compare_digest(password.encode(), expected_password.encode())
+    return username_ok and password_ok

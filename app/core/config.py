@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     kapso_api_base_url: str = "https://api.kapso.ai"
     public_base_url: str
     database_url: str = "sqlite:///db.sqlite3"
+    # /admin is disabled unless this is set.
+    admin_password: str | None = None
 
 
 @lru_cache
