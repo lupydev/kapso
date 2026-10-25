@@ -80,7 +80,12 @@ def kapso_webhook(
 
     try:
         billing.handle_message(session, kapso, settings, phone_number, _button_id(message))
-    except KapsoError:
+    except KapsoError as exc:
+        if not exc.retryable:
+            # Keep the claim so redeliveries are no-ops; a retry would fail the same way.
+            session.commit()
+            logger.warning("Giving up on %s: %s", message["id"], exc)
+            return {"status": "undeliverable"}
         session.rollback()
         logger.exception("Failed to reply to %s", message["id"])
         return JSONResponse({"status": "retry"}, status_code=500)

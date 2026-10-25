@@ -21,6 +21,7 @@ class FakeKapso:
     def __init__(self) -> None:
         self.sent: list[dict] = []
         self.fail_next = False
+        self.fail_retryable = True
 
     def send_text(self, to: str, body: str) -> None:
         self._record({"to": to, "kind": "text", "body": body})
@@ -31,7 +32,7 @@ class FakeKapso:
     def _record(self, message: dict) -> None:
         if self.fail_next:
             self.fail_next = False
-            raise KapsoError("boom")
+            raise KapsoError("boom", retryable=self.fail_retryable)
         self.sent.append(message)
 
 
@@ -263,3 +264,23 @@ def test_payment_is_recorded_even_if_receipt_cannot_be_sent(client, kapso, engin
     with Session(engine) as session:
         assert session.exec(select(Invoice)).one().status == "paid"
     assert not [m for m in kapso.sent if "Payment received" in m["body"]]
+
+
+def test_permanent_send_failure_is_acknowledged_without_retry(client, kapso):
+    # e.g. Kapso 403 for a recipient the sandbox can't reach: retrying can't succeed.
+    kapso.fail_next = True
+    kapso.fail_retryable = False
+    first = post_event(client, inbound("wamid.1", text="hola"))
+    redelivery = post_event(client, inbound("wamid.1", text="hola"))
+
+    assert first.status_code == 200
+    assert first.json() == {"status": "undeliverable"}
+    assert redelivery.json() == {"status": "duplicate"}
+    assert kapso.sent == []
+
+
+@pytest.mark.parametrize(
+    ("status_code", "retryable"), [(400, False), (403, False), (422, False), (429, True), (500, True), (503, True)]
+)
+def test_kapso_errors_are_classified_by_status(status_code, retryable):
+    assert KapsoError.from_status(status_code, "body").retryable is retryable

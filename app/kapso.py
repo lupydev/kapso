@@ -9,7 +9,18 @@ GRAPH_VERSION = "v24.0"
 
 
 class KapsoError(Exception):
-    pass
+    """A failed send. `retryable` is False when resending the same request can't succeed."""
+
+    def __init__(self, message: str, *, retryable: bool = True) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+    @classmethod
+    def from_status(cls, status_code: int, body: str) -> "KapsoError":
+        # 4xx means the request itself is wrong (bad recipient, no sandbox session,
+        # closed 24-hour window) except 429, which clears with time like a 5xx.
+        retryable = status_code == 429 or status_code >= 500
+        return cls(f"Kapso returned {status_code}: {body}", retryable=retryable)
 
 
 class Messenger(Protocol):
@@ -56,7 +67,7 @@ class KapsoClient:
         except httpx.HTTPError as exc:
             raise KapsoError(f"Kapso request failed: {exc}") from exc
         if response.is_error:
-            raise KapsoError(f"Kapso returned {response.status_code}: {response.text}")
+            raise KapsoError.from_status(response.status_code, response.text)
 
 
 def get_kapso(settings: Annotated[Settings, Depends(get_settings)]) -> Messenger:
