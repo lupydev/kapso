@@ -157,9 +157,9 @@ CI/CD lives in the repo:
 
 - `.github/workflows/ci.yml` runs the test suite on SQLite and on Postgres 17, and builds the production image, on every pull request and push to `main`.
 - `Dockerfile` builds the app with Python 3.15 and uv, runs as a non-root user, and listens on `$PORT`.
-- `railway.toml` tells Railway to build that Dockerfile, check `/health` before switching traffic, and restart on failure.
+- `.railway/railway.py` is Railway's Infrastructure as Code for the service: build the Dockerfile, deploy `main` only after CI passes, check `/health` before switching traffic, and run the seed as the pre-deploy command. Preview with `uv run railway config plan` and apply with `uv run railway config apply` (the Railway SDK is a dev dependency). Variables stay unmanaged, so secrets never live in the repo.
 
-Railway deploys `main` from GitHub with **Wait for CI** on, so a commit only ships after CI passes. One-time setup:
+Railway deploys `main` from GitHub with **Wait for CI** on (`checkSuites: True` in the IaC file), so a commit only ships after CI passes. One-time setup:
 
 1. Add a Postgres database to the project and set the service's `DATABASE_URL` to `${{Postgres.DATABASE_URL}}`.
 2. Set `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WEBHOOK_SECRET`, `ADMIN_PASSWORD`, and `PUBLIC_BASE_URL` (the service's public domain).

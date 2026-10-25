@@ -436,6 +436,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "railway-sdk" },
 ]
 
 [package.metadata]
@@ -448,7 +449,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "railway-sdk", specifier = ">=0.7.0" },
+]
 
 [[package]]
 name = "markdown-it-py"
@@ -831,6 +835,15 @@ name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz", hash = "sha256:d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f", size = 130960, upload-time = "2025-09-25T21:33:16.546Z" }
+
+[[package]]
+name = "railway-sdk"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/a7/67013a27af3bdf33226ef15dad55dbd16561db9255b8238c59649ff0882e/railway_sdk-0.7.0.tar.gz", hash = "sha256:b5687d5936494e5a62ae7feaba20462fd261dd66cee07b4c234cdd6b2c78b5e0", size = 19961, upload-time = "2026-10-14T09:54:44.839Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/b7/dc3ba9c904d165e8b6c4bdfd8a4285b4f4711955030d4b893b1f051a4071/railway_sdk-0.7.0-py3-none-any.whl", hash = "sha256:2cabab22864dd36ea4538a5d14bc6c41f871cbfd05344182ec1a8a98b836b06c", size = 13386, upload-time = "2026-10-14T09:54:43.642Z" },
+]
 
 [[package]]
 name = "requests"
