@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated local config (webhook secret, tunnel URL)
+.env.local
+
+# Agent skills are vendored by installers (see skills-lock.json); registry has machine paths
+.claude/skills/
+.atl/
