@@ -69,8 +69,8 @@ def current_invoice_for_link(session: Session, link: PaymentLink) -> Invoice:
     return session.get(Invoice, link.invoice_id)
 
 
-def confirm_payment(session: Session, messenger: Messenger, link: PaymentLink) -> Invoice:
-    """Mark the invoice paid; only the first confirmation notifies the customer."""
+def mark_paid(session: Session, link: PaymentLink) -> tuple[Invoice, bool]:
+    """Mark the invoice paid. Returns whether this call was the one that paid it."""
     # Conditional update instead of read-then-write: under concurrent confirms (double
     # click) only one UPDATE matches a pending row, so only that request sends a receipt.
     result = session.exec(
@@ -79,6 +79,8 @@ def confirm_payment(session: Session, messenger: Messenger, link: PaymentLink) -
         .values(status="paid", paid_at=datetime.now(UTC))
     )
     invoice = session.get(Invoice, link.invoice_id, populate_existing=True)
-    if result.rowcount == 1:
-        messenger.send_text(invoice.phone_number, f"Payment received: {format_amount(invoice)}. Thank you!")
-    return invoice
+    return invoice, result.rowcount == 1
+
+
+def send_receipt(messenger: Messenger, invoice: Invoice) -> None:
+    messenger.send_text(invoice.phone_number, f"Payment received: {format_amount(invoice)}. Thank you!")

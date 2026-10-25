@@ -198,7 +198,7 @@ def test_failed_send_returns_500_so_kapso_retries(client, kapso):
     assert len(kapso.sent) == 1
 
 
-def test_concurrent_confirms_send_one_receipt(tmp_path, kapso):
+def test_concurrent_confirms_pay_only_once(tmp_path):
     # File-backed DB so each session has its own connection, like two real requests.
     engine = create_engine(f"sqlite:///{tmp_path / 'race.db'}")
     SQLModel.metadata.create_all(engine)
@@ -216,13 +216,12 @@ def test_concurrent_confirms_send_one_receipt(tmp_path, kapso):
         seen_by_first = first.get(Invoice, link.invoice_id)
         seen_by_second = second.get(Invoice, link.invoice_id)
         assert seen_by_first.status == seen_by_second.status == "pending"
-        billing.confirm_payment(first, kapso, link)
+        _, first_paid = billing.mark_paid(first, link)
         first.commit()
-        billing.confirm_payment(second, kapso, link)
+        _, second_paid = billing.mark_paid(second, link)
         second.commit()
 
-    receipts = [m for m in kapso.sent if "Payment received" in m["body"]]
-    assert len(receipts) == 1
+    assert (first_paid, second_paid) == (True, False)
 
 
 @pytest.mark.parametrize("signature", ["", "ñ" * 64, "not-hex", "A" * 64])
@@ -248,3 +247,19 @@ def test_unparseable_signed_payload_is_acknowledged(client, kapso):
 
     assert response.status_code == 400
     assert kapso.sent == []
+
+
+def test_payment_is_recorded_even_if_receipt_cannot_be_sent(client, kapso, engine):
+    # Outside the 24-hour window Kapso rejects free-form text; the payment must still stick.
+    post_event(client, inbound("wamid.1", text="hola"))
+    post_event(client, inbound("wamid.2", button="pay"))
+    with Session(engine) as session:
+        token = session.exec(select(PaymentLink)).one().token
+
+    kapso.fail_next = True
+    response = client.post(f"/pay/{token}/confirm")
+
+    assert response.status_code == 200
+    with Session(engine) as session:
+        assert session.exec(select(Invoice)).one().status == "paid"
+    assert not [m for m in kapso.sent if "Payment received" in m["body"]]

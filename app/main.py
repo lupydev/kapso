@@ -119,11 +119,13 @@ def checkout(token: str, session: SessionDep):
 @app.post("/pay/{token}/confirm", response_class=HTMLResponse)
 def confirm(token: str, session: SessionDep, kapso: KapsoDep):
     link = _get_link(session, token)
-    try:
-        invoice = billing.confirm_payment(session, kapso, link)
-    except KapsoError:
-        session.rollback()
-        logger.exception("Failed to send receipt for link %s", link.id)
-        raise HTTPException(status_code=502, detail="could not notify customer, try again")
+    invoice, newly_paid = billing.mark_paid(session, link)
+    # Commit before notifying: the payment is the source of truth, the receipt is
+    # best-effort (Kapso rejects free-form text outside the 24-hour window).
     session.commit()
+    if newly_paid:
+        try:
+            billing.send_receipt(kapso, invoice)
+        except KapsoError:
+            logger.exception("Payment recorded but receipt failed for link %s", link.id)
     return f"<p>Paid {escape(billing.format_amount(invoice))}. You can return to WhatsApp.</p>"
