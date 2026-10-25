@@ -170,3 +170,26 @@ def test_bom_and_utf16_bodies_are_still_processed(client, kapso, encoding):
 
     assert response.status_code == 200
     assert len(kapso.sent) == 1
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda p: p["message"].update(id=None),
+        lambda p: p["conversation"].update(phone_number=None),
+        lambda p: p.update(message="not-an-object"),
+        lambda p: p["message"].update(interactive="not-an-object"),
+    ],
+    ids=["null-id", "null-phone", "message-string", "interactive-string"],
+)
+def test_unusable_payloads_are_rejected_without_side_effects(client, kapso, engine, mutate):
+    # Accepted change from the refactor: these used to crash (500, retried in vain).
+    payload = inbound("wamid.1", button="pay")
+    mutate(payload)
+
+    response = post_event(client, payload)
+
+    assert response.status_code == 400
+    assert kapso.sent == []
+    with Session(engine) as session:
+        assert session.exec(select(Invoice)).all() == []
