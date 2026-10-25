@@ -4,6 +4,16 @@ A WhatsApp payment-collection bot built on [Kapso](https://kapso.ai) by a coding
 
 The experiment and what it found about building on Kapso with an agent are in [`AGENT_DX_REPORT.md`](AGENT_DX_REPORT.md). The raw evidence is in [`FRICTION_LOG.md`](FRICTION_LOG.md).
 
+## Try it
+
+- **Watch it**: a 2-minute video of the WhatsApp flow on a real phone, plus the admin page. *(link)*
+- **See it live**: `https://kapso-production.up.railway.app/admin` (user `admin`, password shared separately) shows the invoices and every webhook Kapso delivered, with its outcome.
+- **Run it yourself** with your own Kapso project and sandbox. Paste this into your coding agent:
+
+  > Clone https://github.com/lupydev/kapso and follow "Run it locally" in the README with my Kapso project: use the Kapso CLI or Project MCP to find my sandbox `phone_number_id`, create the webhook, seed invoices for my WhatsApp number, and start the app behind a tunnel. Then tell me what to send on WhatsApp.
+
+  WhatsApp only lets the sandbox talk to phones with an active sandbox session in *your* project, so this is the way to test it from your own phone.
+
 ## What it does
 
 1. The business loads invoices for its customers (here, with a seed command).
@@ -153,7 +163,7 @@ Railway deploys `main` from GitHub with **Wait for CI** on, so a commit only shi
 
 1. Add a Postgres database to the project and set the service's `DATABASE_URL` to `${{Postgres.DATABASE_URL}}`.
 2. Set `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WEBHOOK_SECRET`, `ADMIN_PASSWORD`, and `PUBLIC_BASE_URL` (the service's public domain).
-3. Seed invoices inside the running service: `railway ssh -- python -m app.seed --phone <number>`.
+3. Set `SEED_PHONE` to the WhatsApp number you'll demo with. The pre-deploy command (`python -m app.seed`) creates that customer's demo invoices on the next deploy, once; without `SEED_PHONE` it does nothing.
 4. Point the Kapso webhook at the service: `kapso whatsapp webhooks update <webhook-id> --phone-number-id <id> --url https://<domain>/webhooks/kapso`.
 
 ## Tests

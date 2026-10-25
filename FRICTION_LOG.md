@@ -96,3 +96,9 @@ Severity: **H** blocks an agent, **M** costs a human or agent time, **L** cosmet
 - **What**: The webhook event docs (`docs/platform/webhooks/message-events#interactive-messages`) and the `integrate-whatsapp` skill reference only show `interactive.button_reply`. Sending list messages is documented, but what comes back when a customer picks a row isn't. I built against Meta's standard `interactive.list_reply.{id,title,description}`, and it worked end to end.
 - **Evidence**: docs MCP search for "list_reply inbound interactive" returned only `button_reply` examples; the live customer pick was processed by the `list_reply` handler.
 - **Impact**: An agent that only trusts Kapso's docs either guesses or drops list replies.
+
+### F15 — Sandbox test sessions can only be created in the dashboard (M)
+- **What**: Adding a tester's phone to the sandbox is "WhatsApp → Sandbox → Add Test Number" in the dashboard, followed by a 6-character code the tester sends within 15 minutes. Neither the Project MCP tool list nor `kapso` CLI 0.19.2 has a way to create, list or check sandbox sessions.
+- **Evidence**: docs page `docs/how-to/whatsapp/use-sandbox-for-testing`; MCP tools/list has no sandbox-session tool.
+- **Impact**: An agent can build and deploy the whole app but can't onboard a second tester, which is exactly what you need to share a sandbox demo with a team. Combined with F2, an agent can't even tell a tester which number to message.
+- **Proposal**: an MCP/CLI `create_sandbox_session(phone)` that returns the activation code, the sandbox number and a `wa.me` link.
