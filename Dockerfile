@@ -21,5 +21,7 @@ RUN uv sync --frozen --no-dev
 RUN useradd --create-home appuser && chown appuser /app
 USER appuser
 
-# Railway sets PORT; the entrypoint (app.main:app) comes from [tool.fastapi] in pyproject.toml.
-CMD ["sh", "-c", "fastapi run --host 0.0.0.0 --port ${PORT:-8000}"]
+# `fastapi run` is production mode (no reload). Railway sets PORT; the entrypoint
+# (app.main:app) comes from [tool.fastapi] in pyproject.toml. `exec` replaces the shell so
+# uvicorn is PID 1 and receives SIGTERM directly for a graceful shutdown.
+CMD ["sh", "-c", "exec fastapi run --host 0.0.0.0 --port ${PORT:-8000}"]
