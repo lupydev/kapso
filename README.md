@@ -72,6 +72,7 @@ Each layer only calls the one below it: routers handle HTTP and status codes, se
 | `GET /pay/{token}` | Simulated checkout page |
 | `POST /pay/{token}/confirm` | Mark the invoice paid and send the receipt |
 | `GET /admin` | Invoices and the latest 50 webhook events (HTTP Basic: `admin` / `ADMIN_PASSWORD`) |
+| `GET /health` | Healthcheck: the app is up and the database answers |
 
 ## Run it locally
 
@@ -137,13 +138,30 @@ A quick tunnel gets a new URL every time it restarts. Update `PUBLIC_BASE_URL` a
 | `KAPSO_WEBHOOK_SECRET` | yes | | Secret used to verify webhook signatures |
 | `PUBLIC_BASE_URL` | yes | | Public URL used in payment links |
 | `KAPSO_API_BASE_URL` | no | `https://api.kapso.ai` | Kapso API host |
-| `DATABASE_URL` | no | `sqlite:///db.sqlite3` | SQLModel database URL |
+| `DATABASE_URL` | no | `sqlite:///db.sqlite3` | Database URL. `postgres://` and `postgresql://` URLs (as Railway provides them) use the psycopg driver |
 | `ADMIN_PASSWORD` | no | | Enables `/admin` (user `admin`); without it `/admin` returns 404 |
+
+## Deploy (Railway)
+
+CI/CD lives in the repo:
+
+- `.github/workflows/ci.yml` runs the test suite on SQLite and on Postgres 17, and builds the production image, on every pull request and push to `main`.
+- `Dockerfile` builds the app with Python 3.15 and uv, runs as a non-root user, and listens on `$PORT`.
+- `railway.toml` tells Railway to build that Dockerfile, check `/health` before switching traffic, and restart on failure.
+
+Railway deploys `main` from GitHub with **Wait for CI** on, so a commit only ships after CI passes. One-time setup:
+
+1. Add a Postgres database to the project and set the service's `DATABASE_URL` to `${{Postgres.DATABASE_URL}}`.
+2. Set `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WEBHOOK_SECRET`, `ADMIN_PASSWORD`, and `PUBLIC_BASE_URL` (the service's public domain).
+3. Seed invoices inside the running service: `railway ssh -- python -m app.seed --phone <number>`.
+4. Point the Kapso webhook at the service: `kapso whatsapp webhooks update <webhook-id> --phone-number-id <id> --url https://<domain>/webhooks/kapso`.
 
 ## Tests
 
 ```bash
 uv run pytest
+# Against Postgres instead of in-memory SQLite:
+TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/kapso_test uv run pytest
 ```
 
 The tests run the FastAPI app against an in-memory SQLite database with a fake Kapso client. They cover signature checks, duplicate and retried deliveries, permanent and transient send failures, invoice lists and picks (including other customers' or paid invoices), idempotent payment links, the webhook event log, admin authentication and HTML escaping, and a double-confirm race on a file-backed database.
@@ -151,7 +169,7 @@ The tests run the FastAPI app against an in-memory SQLite database with a fake K
 ## Known limitations
 
 - Demo scope: invoices come from a seed command (no admin UI to create them), simulated payments, no CSRF protection on the checkout form (the 128-bit token is the only credential).
-- No migrations: schema changes need a fresh `db.sqlite3`.
+- No migrations: tables are created on startup, but changing an existing table needs a fresh database (or a migration tool such as Alembic).
 - The webhook log stores raw payloads, which include customer phone numbers and message text. Keep `/admin` behind a strong password.
 - SQLite holds its write lock during the Kapso HTTP call. That's fine at demo traffic; a real deployment should use Postgres or send replies after commit.
 - If a send times out but actually reached WhatsApp, the retry sends it again.
