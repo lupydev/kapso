@@ -17,8 +17,10 @@ class KapsoError(Exception):
     @classmethod
     def from_status(cls, status_code: int, body: str) -> "KapsoError":
         # 4xx means the request itself is wrong (bad recipient, no sandbox session,
-        # closed 24-hour window) except 429, which clears with time like a 5xx.
-        retryable = status_code == 429 or status_code >= 500
+        # closed 24-hour window), so a retry can't help. Exceptions: 429 clears with
+        # time, and 401 means our API key is wrong or rotated; failing loudly keeps the
+        # message retryable and visible in Kapso's failed deliveries instead of dropped.
+        retryable = status_code in (401, 429) or status_code >= 500
         return cls(f"Kapso returned {status_code}: {body}", retryable=retryable)
 
 

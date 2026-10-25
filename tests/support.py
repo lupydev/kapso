@@ -45,8 +45,8 @@ def inbound(message_id: str, *, text: str | None = None, button: str | None = No
     }
 
 
-def post_event(client, payload: dict, *, secret: str = SECRET, event: str = "whatsapp.message.received"):
-    raw = json.dumps(payload).encode()
+def post_raw(client, raw: bytes, *, secret: str = SECRET, event: str = "whatsapp.message.received"):
+    """POST raw bytes to the webhook, signed the way Kapso signs them."""
     signature = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     return client.post(
         "/webhooks/kapso",
@@ -57,3 +57,7 @@ def post_event(client, payload: dict, *, secret: str = SECRET, event: str = "wha
             "X-Webhook-Signature": signature,
         },
     )
+
+
+def post_event(client, payload: dict, *, secret: str = SECRET, event: str = "whatsapp.message.received"):
+    return post_raw(client, json.dumps(payload).encode(), secret=secret, event=event)

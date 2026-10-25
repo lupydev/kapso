@@ -10,8 +10,9 @@ from app.utils.money import format_amount
 
 logger = logging.getLogger(__name__)
 
-PAY = "pay"
-PAID = "paid"
+# Reply-button IDs sent to WhatsApp and echoed back in button replies.
+BUTTON_PAY = "pay"
+BUTTON_ALREADY_PAID = "paid"
 
 
 def invoice_amount(invoice: Invoice) -> str:
@@ -59,13 +60,13 @@ def reply_to_customer(
 
     if invoice.status == InvoiceStatus.PAID:
         messenger.send_text(phone_number, f"Your invoice for {invoice_amount(invoice)} is already paid. Thank you!")
-    elif button_id == PAY:
+    elif button_id == BUTTON_PAY:
         link = get_or_create_payment_link(session, invoice)
         messenger.send_text(
             phone_number,
             f"Pay {invoice_amount(invoice)} here: {settings.public_base_url}/pay/{link.token}",
         )
-    elif button_id == PAID:
+    elif button_id == BUTTON_ALREADY_PAID:
         messenger.send_text(
             phone_number,
             "We have not received your payment yet. Tap Pay to get your payment link.",
@@ -74,7 +75,7 @@ def reply_to_customer(
         messenger.send_buttons(
             phone_number,
             f"Hi! You have a pending invoice for {invoice_amount(invoice)}.",
-            [(PAY, "Pay"), (PAID, "I already paid")],
+            [(BUTTON_PAY, "Pay"), (BUTTON_ALREADY_PAID, "I already paid")],
         )
 
 

@@ -1,12 +1,10 @@
-import hashlib
 import json
-import hmac
 
 import pytest
 from sqlmodel import Session, select
 
 from app.models import Invoice, PaymentLink
-from tests.support import CUSTOMER, SECRET, inbound, post_event
+from tests.support import CUSTOMER, inbound, post_event, post_raw
 
 
 def test_rejects_invalid_signature(client, kapso):
@@ -28,6 +26,14 @@ def test_malformed_signatures_are_rejected(client, kapso, signature):
     assert kapso.sent == []
 
 
+def test_bad_signature_is_rejected_before_the_event_filter(client, kapso):
+    # Even events the app ignores must be authenticated first.
+    response = post_event(client, inbound("wamid.1"), secret="wrong", event="whatsapp.message.delivered")
+
+    assert response.status_code == 401
+    assert kapso.sent == []
+
+
 def test_ignores_other_events(client, kapso):
     response = post_event(client, inbound("wamid.1"), event="whatsapp.message.delivered")
 
@@ -35,14 +41,8 @@ def test_ignores_other_events(client, kapso):
     assert kapso.sent == []
 
 
-def test_unparseable_signed_payload_is_acknowledged(client, kapso):
-    raw = b"not json"
-    signature = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
-    response = client.post(
-        "/webhooks/kapso",
-        content=raw,
-        headers={"X-Webhook-Event": "whatsapp.message.received", "X-Webhook-Signature": signature},
-    )
+def test_unparseable_signed_payload_is_rejected(client, kapso):
+    response = post_raw(client, b"not json")
 
     assert response.status_code == 400
     assert kapso.sent == []
@@ -130,15 +130,6 @@ def test_message_without_id_is_rejected_as_malformed(client, kapso, engine):
         assert session.exec(select(Invoice)).all() == []
 
 
-def _signed_post(client, raw: bytes):
-    signature = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
-    return client.post(
-        "/webhooks/kapso",
-        content=raw,
-        headers={"X-Webhook-Event": "whatsapp.message.received", "X-Webhook-Signature": signature},
-    )
-
-
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -166,7 +157,7 @@ def test_lenient_payload_shapes_are_still_processed(client, kapso, mutate):
 def test_bom_and_utf16_bodies_are_still_processed(client, kapso, encoding):
     raw = json.dumps(inbound("wamid.1", text="hola")).encode(encoding)
 
-    response = _signed_post(client, raw)
+    response = post_raw(client, raw)
 
     assert response.status_code == 200
     assert len(kapso.sent) == 1

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import AutoString, Field, SQLModel
 
 
 class InvoiceStatus(StrEnum):
@@ -14,6 +14,7 @@ class Invoice(SQLModel, table=True):
     phone_number: str = Field(index=True)
     amount_cents: int
     currency: str
-    status: str = InvoiceStatus.PENDING
+    # Stored as plain text ('pending'/'paid'), not a SQL enum, so existing rows stay readable.
+    status: InvoiceStatus = Field(default=InvoiceStatus.PENDING, sa_type=AutoString)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     paid_at: datetime | None = None
