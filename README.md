@@ -6,7 +6,7 @@ The experiment and what it found about building on Kapso with an agent are in [`
 
 ## Try it
 
-- **Watch it**: a 2-minute video of the WhatsApp flow on a real phone, plus the admin page. *(link)*
+- **Watch it**: [a short video](https://www.youtube.com/shorts/cBEn9_KYqB0) of the WhatsApp flow on a real phone, plus the admin page.
 - **See it live**: `https://kapso-production.up.railway.app/admin` (user `admin`, password shared separately) shows the invoices and every webhook Kapso delivered, with its outcome.
 - **Run it yourself** with your own Kapso project and sandbox. Paste this into your coding agent:
 
