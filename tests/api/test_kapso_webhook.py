@@ -4,6 +4,7 @@ import pytest
 from sqlmodel import Session, select
 
 from app.models import Invoice, PaymentLink
+from app.services import billing
 from tests.support import CUSTOMER, inbound, post_event, post_raw
 
 
@@ -48,51 +49,83 @@ def test_unparseable_signed_payload_is_rejected(client, kapso):
     assert kapso.sent == []
 
 
-def test_text_message_replies_with_invoice_buttons(client, kapso, engine):
+def test_text_message_lists_pending_invoices(client, kapso, seed):
+    internet, power = seed((8990000, "Internet - October"), (15430000, "Electricity - October"))
+
     response = post_event(client, inbound("wamid.1", text="hola"))
 
     assert response.status_code == 200
     assert len(kapso.sent) == 1
     reply = kapso.sent[0]
     assert reply["to"] == CUSTOMER
-    assert reply["kind"] == "buttons"
-    assert "50,000.00 COP" in reply["body"]
-    assert [button_id for button_id, _ in reply["buttons"]] == ["pay", "paid"]
+    assert reply["kind"] == "list"
+    assert reply["button"] == "View invoices"
+    assert reply["rows"] == [
+        (f"invoice:{internet}", "89,900.00 COP", f"#{internet} Internet - October"),
+        (f"invoice:{power}", "154,300.00 COP", f"#{power} Electricity - October"),
+    ]
+
+
+def test_messages_no_longer_create_invoices(client, kapso, engine):
+    post_event(client, inbound("wamid.1", text="hola"))
+
+    assert kapso.sent[0]["kind"] == "text"
+    assert "no pending invoices" in kapso.sent[0]["body"]
     with Session(engine) as session:
-        invoices = session.exec(select(Invoice)).all()
-    assert len(invoices) == 1
-    assert invoices[0].status == "pending"
+        assert session.exec(select(Invoice)).all() == []
 
 
-def test_duplicate_delivery_is_processed_once(client, kapso, engine):
+def test_list_rows_respect_whatsapp_limits(client, kapso, seed):
+    seed(*[(100 * i, f"A very long invoice description that goes past seventy-two characters #{i}") for i in range(1, 13)])
+
+    post_event(client, inbound("wamid.1", text="hola"))
+
+    rows = kapso.sent[0]["rows"]
+    assert len(rows) == 10
+    assert all(len(title) <= 24 and len(description) <= 72 for _, title, description in rows)
+    assert "10 of 12" in kapso.sent[0]["body"]
+
+
+def test_choosing_an_invoice_sends_its_payment_link(client, kapso, seed, engine):
+    _, power = seed((8990000, "Internet - October"), (15430000, "Electricity - October"))
+
+    post_event(client, inbound("wamid.1", row=f"invoice:{power}"))
+    post_event(client, inbound("wamid.2", row=f"invoice:{power}"))
+
+    links = [m["body"] for m in kapso.sent]
+    assert links[0] == links[1]
+    assert "154,300.00 COP" in links[0] and "Electricity - October" in links[0]
+    assert "https://example.test/pay/" in links[0]
+    with Session(engine) as session:
+        assert [link.invoice_id for link in session.exec(select(PaymentLink)).all()] == [power]
+
+
+@pytest.mark.parametrize("whose", ["someone-else", "already-paid", "missing", "garbage"])
+def test_unavailable_invoice_choice_gets_no_link(client, kapso, seed, engine, whose):
+    (mine,) = seed((8990000, "Internet - October"))
+    (theirs,) = seed((100, "Not yours"), phone="+15550000000")
+    if whose == "already-paid":
+        with Session(engine) as session:
+            billing.confirm_payment(session, kapso, billing.get_or_create_payment_link(session, session.get(Invoice, mine)))
+        kapso.sent.clear()
+    row = {"someone-else": f"invoice:{theirs}", "already-paid": f"invoice:{mine}", "missing": "invoice:999", "garbage": "invoice:x"}[whose]
+
+    response = post_event(client, inbound("wamid.1", row=row))
+
+    assert response.status_code == 200
+    assert not any("/pay/" in m["body"] for m in kapso.sent)
+    assert "isn't available" in kapso.sent[0]["body"]
+
+
+def test_duplicate_delivery_is_processed_once(client, kapso, seed):
+    seed((8990000, "Internet - October"))
+
     first = post_event(client, inbound("wamid.1", text="hola"))
     second = post_event(client, inbound("wamid.1", text="hola"))
 
-    assert first.status_code == 200
-    assert second.status_code == 200
+    assert first.json() == {"status": "processed"}
+    assert second.json() == {"status": "duplicate"}
     assert len(kapso.sent) == 1
-    with Session(engine) as session:
-        assert len(session.exec(select(Invoice)).all()) == 1
-
-
-def test_pay_button_returns_the_same_link_every_time(client, kapso, engine):
-    post_event(client, inbound("wamid.1", text="hola"))
-    post_event(client, inbound("wamid.2", button="pay"))
-    post_event(client, inbound("wamid.3", button="pay"))
-
-    links = [m["body"] for m in kapso.sent[1:]]
-    assert len(links) == 2
-    assert links[0] == links[1]
-    assert "https://example.test/pay/" in links[0]
-    with Session(engine) as session:
-        assert len(session.exec(select(PaymentLink)).all()) == 1
-
-
-def test_paid_button_before_paying_reports_pending(client, kapso):
-    post_event(client, inbound("wamid.1", text="hola"))
-    post_event(client, inbound("wamid.2", button="paid"))
-
-    assert "not received" in kapso.sent[-1]["body"]
 
 
 def test_failed_send_returns_500_so_kapso_retries(client, kapso):
@@ -143,7 +176,7 @@ def test_message_without_id_is_rejected_as_malformed(client, kapso, engine):
 def test_lenient_payload_shapes_are_still_processed(client, kapso, mutate):
     # Parsing must stay as permissive as the original dict-based handler: a 400 here
     # would make Kapso drop the message instead of retrying it.
-    payload = inbound("wamid.1", button="other")
+    payload = inbound("wamid.1", button="other")  # unknown button: answered with the invoice list
     mutate(payload)
 
     response = post_event(client, payload)

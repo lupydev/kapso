@@ -37,7 +37,7 @@ def handle_message_received(
 
     try:
         billing.reply_to_customer(
-            session, messenger, settings, event.conversation.phone_number, event.message.button_id
+            session, messenger, settings, event.conversation.phone_number, event.message.selection_id
         )
     except KapsoError as exc:
         if not exc.retryable:

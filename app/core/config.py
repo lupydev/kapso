@@ -13,8 +13,6 @@ class Settings(BaseSettings):
     kapso_api_base_url: str = "https://api.kapso.ai"
     public_base_url: str
     database_url: str = "sqlite:///db.sqlite3"
-    invoice_amount_cents: int = 5000000
-    invoice_currency: str = "COP"
 
 
 @lru_cache

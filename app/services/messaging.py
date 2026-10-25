@@ -27,7 +27,7 @@ class KapsoError(Exception):
 class Messenger(Protocol):
     def send_text(self, to: str, body: str) -> None: ...
 
-    def send_buttons(self, to: str, body: str, buttons: list[tuple[str, str]]) -> None: ...
+    def send_list(self, to: str, body: str, button: str, rows: list[tuple[str, str, str]]) -> None: ...
 
 
 class KapsoClient:
@@ -43,19 +43,26 @@ class KapsoClient:
     def send_text(self, to: str, body: str) -> None:
         self._send({"to": to, "type": "text", "text": {"body": body}})
 
-    def send_buttons(self, to: str, body: str, buttons: list[tuple[str, str]]) -> None:
+    def send_list(self, to: str, body: str, button: str, rows: list[tuple[str, str, str]]) -> None:
+        """Send a list picker; rows are (id, title, description)."""
         self._send(
             {
                 "to": to,
                 "type": "interactive",
                 "interactive": {
-                    "type": "button",
+                    "type": "list",
                     "body": {"text": body},
                     "action": {
-                        "buttons": [
-                            {"type": "reply", "reply": {"id": button_id, "title": title}}
-                            for button_id, title in buttons
-                        ]
+                        "button": button,
+                        "sections": [
+                            {
+                                "title": "Pending invoices",
+                                "rows": [
+                                    {"id": row_id, "title": title, "description": description}
+                                    for row_id, title, description in rows
+                                ],
+                            }
+                        ],
                     },
                 },
             }

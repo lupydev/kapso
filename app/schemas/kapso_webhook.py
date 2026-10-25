@@ -9,12 +9,13 @@ class _Lenient(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
 
-class ButtonReply(_Lenient):
+class Reply(_Lenient):
     id: str | None = None
 
 
 class Interactive(_Lenient):
-    button_reply: ButtonReply | None = None
+    button_reply: Reply | None = None
+    list_reply: Reply | None = None
 
 
 class InboundMessage(_Lenient):
@@ -22,10 +23,12 @@ class InboundMessage(_Lenient):
     interactive: Interactive | None = None
 
     @property
-    def button_id(self) -> str | None:
-        if self.interactive and self.interactive.button_reply:
-            return self.interactive.button_reply.id
-        return None
+    def selection_id(self) -> str | None:
+        """ID of the tapped reply button or chosen list row, if any."""
+        if not self.interactive:
+            return None
+        reply = self.interactive.list_reply or self.interactive.button_reply
+        return reply.id if reply else None
 
 
 class Conversation(_Lenient):

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Kapso payment collection{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: {% block width %}28rem{% endblock %}; margin: 3rem auto; padding: 0 1rem; color: #1a1a1a; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+    th { background: #f6f6f6; }
+    code { font-size: 0.8rem; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+{% block content %}{% endblock %}
+</body>
+</html>

@@ -19,8 +19,8 @@ class FakeKapso:
     def send_text(self, to: str, body: str) -> None:
         self._record({"to": to, "kind": "text", "body": body})
 
-    def send_buttons(self, to: str, body: str, buttons: list[tuple[str, str]]) -> None:
-        self._record({"to": to, "kind": "buttons", "body": body, "buttons": buttons})
+    def send_list(self, to: str, body: str, button: str, rows: list[tuple[str, str, str]]) -> None:
+        self._record({"to": to, "kind": "list", "body": body, "button": button, "rows": rows})
 
     def _record(self, message: dict) -> None:
         if self.fail_next:
@@ -29,8 +29,15 @@ class FakeKapso:
         self.sent.append(message)
 
 
-def inbound(message_id: str, *, text: str | None = None, button: str | None = None) -> dict:
-    if button:
+def inbound(message_id: str, *, text: str | None = None, row: str | None = None, button: str | None = None) -> dict:
+    """A `whatsapp.message.received` payload: plain text, a list-row pick, or a button tap."""
+    if row:
+        message = {
+            "id": message_id,
+            "type": "interactive",
+            "interactive": {"type": "list_reply", "list_reply": {"id": row, "title": row}},
+        }
+    elif button:
         message = {
             "id": message_id,
             "type": "interactive",

@@ -8,7 +8,8 @@ from app.api.deps import get_messenger
 from app.main import app
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
-from tests.support import SECRET, FakeKapso
+from app.services import billing
+from tests.support import CUSTOMER, SECRET, FakeKapso
 
 
 @pytest.fixture
@@ -38,8 +39,22 @@ def client(engine, kapso):
         kapso_phone_number_id="123",
         kapso_webhook_secret=SECRET,
         public_base_url="https://example.test",
-        invoice_amount_cents=5000000,
-        invoice_currency="COP",
     )
     yield TestClient(app)
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def seed(engine):
+    """Create invoices for a customer, the same way the seed command does."""
+
+    def create(*items: tuple[int, str], phone: str = CUSTOMER) -> list[int]:
+        with Session(engine) as session:
+            invoices = [
+                billing.create_invoice(session, phone, amount_cents, "COP", description)
+                for amount_cents, description in items
+            ]
+            session.commit()
+            return [invoice.id for invoice in invoices]
+
+    return create

@@ -1,10 +1,9 @@
-from html import escape
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session
 
 from app.api.deps import MessengerDep, SessionDep
+from app.api.templates import templates
 from app.models import InvoiceStatus, PaymentLink
 from app.services import billing
 
@@ -19,25 +18,21 @@ def _get_link(session: Session, token: str) -> PaymentLink:
 
 
 @router.get("/{token}", response_class=HTMLResponse)
-def checkout_page(token: str, session: SessionDep):
+def checkout_page(request: Request, token: str, session: SessionDep):
     invoice = billing.invoice_for_link(session, _get_link(session, token))
-    amount = escape(billing.invoice_amount(invoice))
-    if invoice.status == InvoiceStatus.PAID:
-        action = "<p>This invoice is already paid.</p>"
-    else:
-        action = (
-            f'<form method="post" action="/pay/{escape(token)}/confirm">'
-            "<button>Simulate successful payment</button></form>"
-        )
-    return f"""<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>Simulated checkout</title></head>
-<body style="font-family: system-ui; max-width: 28rem; margin: 3rem auto; padding: 0 1rem">
-<h1>Simulated checkout</h1><p>Amount due: <strong>{amount}</strong></p>{action}
-<p><small>Demo only. No real money moves.</small></p></body></html>"""
+    return templates.TemplateResponse(
+        request,
+        "checkout.html",
+        {
+            "invoice": invoice,
+            "amount": billing.invoice_amount(invoice),
+            "paid": invoice.status == InvoiceStatus.PAID,
+            "token": token,
+        },
+    )
 
 
 @router.post("/{token}/confirm", response_class=HTMLResponse)
-def confirm_payment(token: str, session: SessionDep, messenger: MessengerDep):
+def confirm_payment(request: Request, token: str, session: SessionDep, messenger: MessengerDep):
     invoice = billing.confirm_payment(session, messenger, _get_link(session, token))
-    return f"<p>Paid {escape(billing.invoice_amount(invoice))}. You can return to WhatsApp.</p>"
+    return templates.TemplateResponse(request, "paid.html", {"amount": billing.invoice_amount(invoice)})
