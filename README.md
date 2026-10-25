@@ -6,11 +6,12 @@ The experiment and what it found about building on Kapso with an agent are in [`
 
 ## What it does
 
-1. A customer sends any message to the WhatsApp number.
-2. The bot replies with their pending invoice and two buttons: **Pay** and **I already paid**.
-3. **Pay** returns a link to a simulated checkout. Repeated taps return the same link.
-4. Confirming the checkout marks the invoice paid and sends a receipt on WhatsApp, once.
-5. **I already paid** reports whether the payment was received.
+1. The business loads invoices for its customers (here, with a seed command).
+2. A customer sends any message to the WhatsApp number.
+3. The bot replies with a list of their pending invoices (WhatsApp list message, up to 10).
+4. Choosing one returns a link to a simulated checkout for that invoice. Choosing it again returns the same link.
+5. Confirming the checkout marks the invoice paid and sends a receipt on WhatsApp, once. The next message lists only what's still pending.
+6. Every verified webhook is logged, and `/admin` shows invoices and webhook events behind a password.
 
 No real money moves. The checkout page stands in for a payment provider.
 
@@ -26,6 +27,7 @@ Kapso retries a webhook when it doesn't get a 200. The handler is built around t
 | Permanent send failures | Any other Kapso 4xx (e.g. no sandbox session) keeps the claim and returns `200 {"status": "undeliverable"}`, because a retry would fail the same way. |
 | Unusable payloads | A signed body that doesn't match the payload schema (invalid JSON, no `message.id` or `conversation.phone_number`) gets `400`. |
 | Double-submitted checkout | The invoice is marked paid with a conditional `UPDATE ... WHERE status != 'paid'`. Only the request that changed the row sends a receipt. |
+| Picking someone else's invoice | A list row only gets a payment link if the invoice belongs to the sender and is still pending. |
 | Receipt can't be sent | The payment is committed first and the receipt is best-effort. A receipt that fails (e.g. outside the 24-hour window) is logged; the payment still counts. |
 
 These were checked against live Kapso: three replays of a real signed webhook were acknowledged as duplicates with no extra outbound messages, and a Kapso test delivery that used to fail after 3 attempts now succeeds on the first.
@@ -35,23 +37,28 @@ These were checked against live Kapso: three replays of a real signed webhook we
 ```text
 app/
   main.py                     FastAPI app (entrypoint: app.main:app)
+  seed.py                     Seed demo invoices: python -m app.seed --phone <number>
   api/
     main.py                   Mounts the routers
-    deps.py                   Session, settings and messenger dependencies
+    deps.py                   Session, settings, messenger and admin-auth dependencies
+    templates.py              Jinja2 templates
     routers/
-      webhooks/kapso.py       Kapso webhook: signature, event filter, payload parsing
+      webhooks/kapso.py       Kapso webhook: signature, event filter, parsing, event log
       checkout.py             Simulated checkout page and payment confirmation
+      admin.py                Invoices and webhook events (HTTP Basic)
   core/
     config.py                 Settings from .env and .env.local
     db.py                     Engine and session
-    security.py               Webhook signature check
-  models/                     SQLModel tables: Invoice, PaymentLink, ProcessedMessage
+    security.py               Webhook signature and admin credential checks
+  models/                     SQLModel tables: Invoice, PaymentLink, ProcessedMessage, WebhookEvent
   schemas/kapso_webhook.py    The parts of the Kapso payload the app reads
   services/
     inbound.py                Process each inbound message once (claim, reply, retry policy)
-    billing.py                Invoices, payment links, replies and receipts
+    billing.py                Invoices, invoice list replies, payment links and receipts
+    events.py                 Webhook event log
     messaging.py              Kapso client and error classification
-  utils/money.py              Amount formatting
+  templates/                  checkout, payment confirmation and admin pages
+  utils/                      Amount formatting, phone normalization
 tests/
   api/                        HTTP behavior through the FastAPI app
   services/                   Billing race and Kapso error classification
@@ -64,6 +71,7 @@ Each layer only calls the one below it: routers handle HTTP and status codes, se
 | `POST /webhooks/kapso` | Kapso `whatsapp.message.received` webhook (payload v2) |
 | `GET /pay/{token}` | Simulated checkout page |
 | `POST /pay/{token}/confirm` | Mark the invoice paid and send the receipt |
+| `GET /admin` | Invoices and the latest 50 webhook events (HTTP Basic: `admin` / `ADMIN_PASSWORD`) |
 
 ## Run it locally
 
@@ -103,13 +111,20 @@ Requirements: [uv](https://docs.astral.sh/uv/), [`@kapso/cli`](https://docs.kaps
      --payload-version v2 --no-buffer-enabled --active --secret-key "$SECRET"
    ```
 
-5. Start the app:
+5. Seed demo invoices for the WhatsApp number you'll test with, and optionally set an admin password:
+
+   ```bash
+   uv run python -m app.seed --phone +573001112233
+   echo "ADMIN_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')" >> .env.local
+   ```
+
+   Then start the app:
 
    ```bash
    uv run fastapi dev
    ```
 
-6. Message the number from WhatsApp. With the sandbox, send any message to the sandbox chat first: activating the session doesn't open the 24-hour window, so the bot's first reply would fail without it.
+6. Message the number from WhatsApp: the bot answers with your pending invoices. (On the sandbox, activating the session doesn't open the 24-hour window; your first message does.)
 
 A quick tunnel gets a new URL every time it restarts. Update `PUBLIC_BASE_URL` and the webhook URL (`kapso whatsapp webhooks update`) when that happens.
 
@@ -123,8 +138,7 @@ A quick tunnel gets a new URL every time it restarts. Update `PUBLIC_BASE_URL` a
 | `PUBLIC_BASE_URL` | yes | | Public URL used in payment links |
 | `KAPSO_API_BASE_URL` | no | `https://api.kapso.ai` | Kapso API host |
 | `DATABASE_URL` | no | `sqlite:///db.sqlite3` | SQLModel database URL |
-| `INVOICE_AMOUNT_CENTS` | no | `5000000` | Demo invoice amount (50,000.00) |
-| `INVOICE_CURRENCY` | no | `COP` | Demo invoice currency |
+| `ADMIN_PASSWORD` | no | | Enables `/admin` (user `admin`); without it `/admin` returns 404 |
 
 ## Tests
 
@@ -132,11 +146,13 @@ A quick tunnel gets a new URL every time it restarts. Update `PUBLIC_BASE_URL` a
 uv run pytest
 ```
 
-The tests run the FastAPI app against an in-memory SQLite database with a fake Kapso client. They cover signature checks, duplicate and retried deliveries, permanent and transient send failures, idempotent payment links, and a double-confirm race on a file-backed database.
+The tests run the FastAPI app against an in-memory SQLite database with a fake Kapso client. They cover signature checks, duplicate and retried deliveries, permanent and transient send failures, invoice lists and picks (including other customers' or paid invoices), idempotent payment links, the webhook event log, admin authentication and HTML escaping, and a double-confirm race on a file-backed database.
 
 ## Known limitations
 
-- Demo scope: one invoice per customer, simulated payments, no CSRF protection on the checkout form (the 128-bit token is the only credential).
+- Demo scope: invoices come from a seed command (no admin UI to create them), simulated payments, no CSRF protection on the checkout form (the 128-bit token is the only credential).
+- No migrations: schema changes need a fresh `db.sqlite3`.
+- The webhook log stores raw payloads, which include customer phone numbers and message text. Keep `/admin` behind a strong password.
 - SQLite holds its write lock during the Kapso HTTP call. That's fine at demo traffic; a real deployment should use Postgres or send replies after commit.
 - If a send times out but actually reached WhatsApp, the retry sends it again.
 - Batched webhooks (`X-Webhook-Batch`) aren't supported; keep buffering off.
