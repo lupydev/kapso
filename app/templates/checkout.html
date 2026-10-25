@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Simulated checkout{% endblock %}
+{% block content %}
+<h1>Simulated checkout</h1>
+<p>{{ invoice.description }}</p>
+<p>Amount due: <strong>{{ amount }}</strong></p>
+{% if paid %}
+<p>This invoice is already paid.</p>
+{% else %}
+<form method="post" action="/pay/{{ token }}/confirm"><button>Simulate successful payment</button></form>
+{% endif %}
+<p class="muted"><small>Demo only. No real money moves.</small></p>
+{% endblock %}

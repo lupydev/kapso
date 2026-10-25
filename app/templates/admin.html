@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block width %}64rem{% endblock %}
+{% block head %}
+<style>
+  h1 { margin-bottom: 0.25rem; }
+  h2 { margin: 2.5rem 0 0.75rem; font-size: 1.1rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin-top: 1.5rem; }
+  .stat { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem 1rem; }
+  .stat b { display: block; font-size: 1.5rem; }
+  .stat span { color: var(--muted); font-size: 0.85rem; }
+  .table-wrap { overflow-x: auto; }
+  table { table-layout: fixed; }
+  td, th { overflow-wrap: anywhere; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem; background: var(--chip); }
+  .badge.good { background: var(--good-bg); color: var(--good); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .event { border: 1px solid var(--line); border-radius: 0.5rem; margin-bottom: 0.75rem; }
+  .event-head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; padding: 0.6rem 0.9rem; }
+  .event-head code { color: var(--muted); }
+  .event details { border-top: 1px solid var(--line); }
+  .event summary { cursor: pointer; padding: 0.4rem 0.9rem; color: var(--muted); font-size: 0.85rem; }
+  .payload { margin: 0; padding: 0.75rem 0.9rem; max-height: 24rem; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--code-bg); font-size: 0.8rem; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Admin</h1>
+<p class="muted">Invoices and the latest webhook deliveries from Kapso.</p>
+
+<div class="stats">
+  <div class="stat"><b>{{ summary.pending }}</b><span>pending invoices</span></div>
+  <div class="stat"><b>{{ summary.paid }}</b><span>paid invoices</span></div>
+  <div class="stat"><b>{{ summary.events }}</b><span>recent webhooks</span></div>
+  <div class="stat"><b>{{ summary.failed }}</b><span>answered 4xx/5xx</span></div>
+</div>
+
+<h2>Invoices</h2>
+<div class="table-wrap">
+<table>
+  <colgroup><col style="width:3rem"><col style="width:11rem"><col><col style="width:9rem"><col style="width:6rem"><col style="width:10rem"></colgroup>
+  <thead><tr><th>#</th><th>Customer</th><th>Description</th><th>Amount</th><th>Status</th><th>Paid at (UTC)</th></tr></thead>
+  <tbody>
+  {% for invoice, amount in invoices %}
+    <tr>
+      <td>{{ invoice.id }}</td>
+      <td>{{ invoice.phone_number }}</td>
+      <td>{{ invoice.description }}</td>
+      <td>{{ amount }}</td>
+      <td><span class="badge {{ 'good' if invoice.status == 'paid' else 'warn' }}">{{ invoice.status }}</span></td>
+      <td>{{ invoice.paid_at.strftime("%Y-%m-%d %H:%M") if invoice.paid_at else "—" }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No invoices. Seed some with <code>python -m app.seed --phone …</code></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Webhook events</h2>
+{% for event, payload in webhooks %}
+  {% set tone = 'good' if event.outcome in ('processed', 'duplicate', 'ignored') else ('warn' if event.outcome == 'undeliverable' else 'bad') %}
+  <div class="event">
+    <div class="event-head">
+      <span class="badge {{ tone }}">{{ event.outcome }} · {{ event.status_code }}</span>
+      <span>{{ event.event_type or "no event header" }}</span>
+      <span class="muted">{{ event.received_at.strftime("%Y-%m-%d %H:%M:%S") }} UTC</span>
+      {% if event.phone_number %}<span>{{ event.phone_number }}</span>{% endif %}
+      {% if event.message_id %}<code>{{ event.message_id }}</code>{% endif %}
+    </div>
+    <details>
+      <summary>Payload</summary>
+      <pre class="payload"><code>{{ payload }}</code></pre>
+    </details>
+  </div>
+{% else %}
+  <p class="muted">No webhook events yet.</p>
+{% endfor %}
+{% endblock %}
