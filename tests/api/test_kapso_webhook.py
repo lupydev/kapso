@@ -1,4 +1,5 @@
 import hashlib
+import json
 import hmac
 
 import pytest
@@ -117,7 +118,7 @@ def test_permanent_send_failure_is_acknowledged_without_retry(client, kapso):
     assert kapso.sent == []
 
 
-def test_message_without_id_is_rejected_as_malformed(client, kapso):
+def test_message_without_id_is_rejected_as_malformed(client, kapso, engine):
     payload = inbound("wamid.1", text="hola")
     del payload["message"]["id"]
 
@@ -125,3 +126,47 @@ def test_message_without_id_is_rejected_as_malformed(client, kapso):
 
     assert response.status_code == 400
     assert kapso.sent == []
+    with Session(engine) as session:
+        assert session.exec(select(Invoice)).all() == []
+
+
+def _signed_post(client, raw: bytes):
+    signature = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    return client.post(
+        "/webhooks/kapso",
+        content=raw,
+        headers={"X-Webhook-Event": "whatsapp.message.received", "X-Webhook-Signature": signature},
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda p: p["message"].update(id=123),
+        lambda p: p["conversation"].update(phone_number=573001112233),
+        lambda p: p["message"]["interactive"]["button_reply"].pop("id"),
+        lambda p: p["message"]["interactive"]["button_reply"].update(id=1),
+    ],
+    ids=["numeric-id", "numeric-phone", "button-without-id", "numeric-button-id"],
+)
+def test_lenient_payload_shapes_are_still_processed(client, kapso, mutate):
+    # Parsing must stay as permissive as the original dict-based handler: a 400 here
+    # would make Kapso drop the message instead of retrying it.
+    payload = inbound("wamid.1", button="other")
+    mutate(payload)
+
+    response = post_event(client, payload)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processed"}
+    assert len(kapso.sent) == 1
+
+
+@pytest.mark.parametrize("encoding", ["utf-8-sig", "utf-16"])
+def test_bom_and_utf16_bodies_are_still_processed(client, kapso, encoding):
+    raw = json.dumps(inbound("wamid.1", text="hola")).encode(encoding)
+
+    response = _signed_post(client, raw)
+
+    assert response.status_code == 200
+    assert len(kapso.sent) == 1

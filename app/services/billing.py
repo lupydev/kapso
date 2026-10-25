@@ -1,11 +1,14 @@
+import logging
 from datetime import UTC, datetime
 
 from sqlmodel import Session, select, update
 
 from app.core.config import Settings
 from app.models import Invoice, InvoiceStatus, PaymentLink
-from app.services.messaging import Messenger
+from app.services.messaging import KapsoError, Messenger
 from app.utils.money import format_amount
+
+logger = logging.getLogger(__name__)
 
 PAY = "pay"
 PAID = "paid"
@@ -90,3 +93,17 @@ def mark_paid(session: Session, link: PaymentLink) -> tuple[Invoice, bool]:
 
 def send_receipt(messenger: Messenger, invoice: Invoice) -> None:
     messenger.send_text(invoice.phone_number, f"Payment received: {invoice_amount(invoice)}. Thank you!")
+
+
+def confirm_payment(session: Session, messenger: Messenger, link: PaymentLink) -> Invoice:
+    """Record the payment, then notify the customer once."""
+    invoice, newly_paid = mark_paid(session, link)
+    # Commit before notifying: the payment is the source of truth, the receipt is
+    # best-effort (Kapso rejects free-form text outside the 24-hour window).
+    session.commit()
+    if newly_paid:
+        try:
+            send_receipt(messenger, invoice)
+        except KapsoError:
+            logger.exception("Payment recorded but receipt failed for link %s", link.id)
+    return invoice

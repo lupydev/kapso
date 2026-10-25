@@ -1,18 +1,24 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
 MESSAGE_RECEIVED = "whatsapp.message.received"
 
 
-class ButtonReply(BaseModel):
-    id: str
+class _Lenient(BaseModel):
+    # As permissive as the payload allows: a rejected webhook (400) is never retried by
+    # Kapso, so the message would be lost. Numbers are accepted where strings are expected.
+    model_config = ConfigDict(coerce_numbers_to_str=True)
 
 
-class Interactive(BaseModel):
+class ButtonReply(_Lenient):
+    id: str | None = None
+
+
+class Interactive(_Lenient):
     button_reply: ButtonReply | None = None
 
 
-class InboundMessage(BaseModel):
-    id: str = Field(min_length=1)
+class InboundMessage(_Lenient):
+    id: str
     interactive: Interactive | None = None
 
     @property
@@ -22,11 +28,11 @@ class InboundMessage(BaseModel):
         return None
 
 
-class Conversation(BaseModel):
-    phone_number: str = Field(min_length=1)
+class Conversation(_Lenient):
+    phone_number: str
 
 
-class MessageReceived(BaseModel):
+class MessageReceived(_Lenient):
     """The parts of Kapso's `whatsapp.message.received` payload (v2) this app reads."""
 
     message: InboundMessage

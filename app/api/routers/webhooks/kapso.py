@@ -1,9 +1,9 @@
+import json
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 from app.api.deps import MessengerDep, SessionDep, SettingsDep
 from app.core.security import valid_webhook_signature
@@ -43,8 +43,9 @@ def kapso_webhook(
         return {"status": "ignored"}
 
     try:
-        event = MessageReceived.model_validate_json(body)
-    except ValidationError:
+        # json.loads detects UTF-8 BOM and UTF-16 bodies; model_validate_json does not.
+        event = MessageReceived.model_validate(json.loads(body))
+    except ValueError:  # JSONDecodeError, UnicodeDecodeError and ValidationError
         # Signed but unusable: retrying won't fix it, so answer 4xx instead of 500.
         logger.warning("Ignoring malformed webhook payload")
         raise HTTPException(status_code=400, detail="malformed payload")

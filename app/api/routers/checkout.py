@@ -1,4 +1,3 @@
-import logging
 from html import escape
 
 from fastapi import APIRouter, HTTPException
@@ -8,9 +7,6 @@ from sqlmodel import Session
 from app.api.deps import MessengerDep, SessionDep
 from app.models import InvoiceStatus, PaymentLink
 from app.services import billing
-from app.services.messaging import KapsoError
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pay", tags=["checkout"])
 
@@ -43,14 +39,5 @@ def checkout_page(token: str, session: SessionDep):
 
 @router.post("/{token}/confirm", response_class=HTMLResponse)
 def confirm_payment(token: str, session: SessionDep, messenger: MessengerDep):
-    link = _get_link(session, token)
-    invoice, newly_paid = billing.mark_paid(session, link)
-    # Commit before notifying: the payment is the source of truth, the receipt is
-    # best-effort (Kapso rejects free-form text outside the 24-hour window).
-    session.commit()
-    if newly_paid:
-        try:
-            billing.send_receipt(messenger, invoice)
-        except KapsoError:
-            logger.exception("Payment recorded but receipt failed for link %s", link.id)
+    invoice = billing.confirm_payment(session, messenger, _get_link(session, token))
     return f"<p>Paid {escape(billing.invoice_amount(invoice))}. You can return to WhatsApp.</p>"
