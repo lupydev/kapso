@@ -1,9 +1,8 @@
-from typing import Annotated, Protocol
+from typing import Protocol
 
 import httpx
-from fastapi import Depends
 
-from app.config import Settings, get_settings
+from app.core.config import Settings
 
 GRAPH_VERSION = "v24.0"
 
@@ -68,7 +67,3 @@ class KapsoClient:
             raise KapsoError(f"Kapso request failed: {exc}") from exc
         if response.is_error:
             raise KapsoError.from_status(response.status_code, response.text)
-
-
-def get_kapso(settings: Annotated[Settings, Depends(get_settings)]) -> Messenger:
-    return KapsoClient(settings)

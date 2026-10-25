@@ -24,7 +24,7 @@ Kapso retries a webhook when it doesn't get a 200. The handler is built around t
 | Duplicate deliveries | The inbound `message.id` is the primary key of `ProcessedMessage`, claimed in the same transaction as the work. A redelivery returns `200 {"status": "duplicate"}` and sends nothing. |
 | Transient send failures | A Kapso 5xx, 429 or timeout rolls back the claim and returns `500`, so Kapso retries. |
 | Permanent send failures | Any other Kapso 4xx (e.g. no sandbox session) keeps the claim and returns `200 {"status": "undeliverable"}`, because a retry would fail the same way. |
-| Unusable payloads | A signed body that isn't valid JSON, or has no `message` or `conversation.phone_number`, gets `400`. |
+| Unusable payloads | A signed body that doesn't match the payload schema (invalid JSON, no `message.id` or `conversation.phone_number`) gets `400`. |
 | Double-submitted checkout | The invoice is marked paid with a conditional `UPDATE ... WHERE status != 'paid'`. Only the request that changed the row sends a receipt. |
 | Receipt can't be sent | The payment is committed first and the receipt is best-effort. A receipt that fails (e.g. outside the 24-hour window) is logged; the payment still counts. |
 
@@ -34,14 +34,30 @@ These were checked against live Kapso: three replays of a real signed webhook we
 
 ```text
 app/
-  config.py   Settings from .env and .env.local
-  db.py       SQLModel tables: ProcessedMessage, Invoice, PaymentLink
-  kapso.py    Kapso client (Meta-compatible proxy) and error classification
-  billing.py  Invoice, payment link and receipt logic
-  main.py     FastAPI routes: webhook, checkout page, confirm
+  main.py                     FastAPI app (entrypoint: app.main:app)
+  api/
+    main.py                   Mounts the routers
+    deps.py                   Session, settings and messenger dependencies
+    routers/
+      webhooks/kapso.py       Kapso webhook: signature, event filter, payload parsing
+      checkout.py             Simulated checkout page and payment confirmation
+  core/
+    config.py                 Settings from .env and .env.local
+    db.py                     Engine and session
+    security.py               Webhook signature check
+  models/                     SQLModel tables: Invoice, PaymentLink, ProcessedMessage
+  schemas/kapso_webhook.py    The parts of the Kapso payload the app reads
+  services/
+    inbound.py                Process each inbound message once (claim, reply, retry policy)
+    billing.py                Invoices, payment links, replies and receipts
+    messaging.py              Kapso client and error classification
+  utils/money.py              Amount formatting
 tests/
-  test_webhook.py
+  api/                        HTTP behavior through the FastAPI app
+  services/                   Billing race and Kapso error classification
 ```
+
+Each layer only calls the one below it: routers handle HTTP and status codes, services own the transaction and business rules, models and schemas describe data.
 
 | Route | Purpose |
 | --- | --- |
@@ -124,4 +140,3 @@ The tests run the FastAPI app against an in-memory SQLite database with a fake K
 - SQLite holds its write lock during the Kapso HTTP call. That's fine at demo traffic; a real deployment should use Postgres or send replies after commit.
 - If a send times out but actually reached WhatsApp, the retry sends it again.
 - Batched webhooks (`X-Webhook-Batch`) aren't supported; keep buffering off.
-- A `message` without an `id` returns `500` instead of `400`. Kapso always sends one, so this is untested hardening work.
