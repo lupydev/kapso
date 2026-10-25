@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import UTC, datetime
 
 from sqlmodel import Session, select, update
@@ -12,6 +13,7 @@ from app.utils.phone import normalize_phone
 logger = logging.getLogger(__name__)
 
 INVOICE_ROW_PREFIX = "invoice:"
+INVOICE_ID_FORMAT = re.compile(r"[1-9][0-9]{0,17}")
 MAX_LIST_ROWS = 10  # WhatsApp list messages allow at most 10 rows.
 LIST_BUTTON = "View invoices"
 
@@ -68,7 +70,8 @@ def invoice_for_link(session: Session, link: PaymentLink) -> Invoice:
 def _chosen_invoice(session: Session, phone_number: str, row_id: str) -> Invoice | None:
     """The invoice behind a list row, only if it belongs to this customer and is still pending."""
     invoice_id = row_id.removeprefix(INVOICE_ROW_PREFIX)
-    if not invoice_id.isdigit():
+    # Only the ids we put in the list: ASCII digits that fit a SQLite integer.
+    if not INVOICE_ID_FORMAT.fullmatch(invoice_id):
         return None
     invoice = session.get(Invoice, int(invoice_id))
     if invoice is None or invoice.phone_number != normalize_phone(phone_number):

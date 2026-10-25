@@ -100,7 +100,7 @@ def test_choosing_an_invoice_sends_its_payment_link(client, kapso, seed, engine)
         assert [link.invoice_id for link in session.exec(select(PaymentLink)).all()] == [power]
 
 
-@pytest.mark.parametrize("whose", ["someone-else", "already-paid", "missing", "garbage"])
+@pytest.mark.parametrize("whose", ["someone-else", "already-paid", "missing", "garbage", "huge", "unicode-digit"])
 def test_unavailable_invoice_choice_gets_no_link(client, kapso, seed, engine, whose):
     (mine,) = seed((8990000, "Internet - October"))
     (theirs,) = seed((100, "Not yours"), phone="+15550000000")
@@ -108,7 +108,7 @@ def test_unavailable_invoice_choice_gets_no_link(client, kapso, seed, engine, wh
         with Session(engine) as session:
             billing.confirm_payment(session, kapso, billing.get_or_create_payment_link(session, session.get(Invoice, mine)))
         kapso.sent.clear()
-    row = {"someone-else": f"invoice:{theirs}", "already-paid": f"invoice:{mine}", "missing": "invoice:999", "garbage": "invoice:x"}[whose]
+    row = {"someone-else": f"invoice:{theirs}", "already-paid": f"invoice:{mine}", "missing": "invoice:999", "garbage": "invoice:x", "huge": "invoice:" + "9" * 30, "unicode-digit": "invoice:\u0661"}[whose]
 
     response = post_event(client, inbound("wamid.1", row=row))
 
