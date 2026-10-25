@@ -25,6 +25,7 @@ Severity: **H** blocks an agent, **M** costs a human or agent time, **L** cosmet
 - **What**: `kapso whatsapp numbers list --output json` returns `display_phone_number: null` for the sandbox (`phone_number_id 597907523413541`). The dashboard side panel also shows "Shared test number" without the number itself.
 - **Evidence**: CLI 0.19.2 output; screenshot 09:24.
 - **Impact**: An agent can't tell the user which WhatsApp number to message, so the zero-dashboard loop breaks.
+- **Workaround found later**: once the user taps an interactive button, the inbound message's `context.from` (from MCP `list_whatsapp_messages`) holds the sandbox's display number. So the number leaks through message context but isn't exposed on the number resource, and it only shows up after the human has already found the chat.
 
 ### F3 — Quick setup mixes two auth paths (M)
 - **What**: Step 1 says `export KAPSO_API_KEY=...`; step 2 also says `kapso login` (browser). The CLI docs say that when `KAPSO_API_KEY` is set, project commands use it directly, so one of the two is redundant. It is unclear which identity wins when both exist.
@@ -65,3 +66,9 @@ Severity: **H** blocks an agent, **M** costs a human or agent time, **L** cosmet
 - **Impact**: The "first message" step of the onboarding fails for a sandbox user. To recover, the human has to message the sandbox from their phone, but per F2 the agent can't tell them which number to message.
 - **Resolved**: activation was sent at 08:58 and the send failed about an hour later, well inside 24 h, so the activation code does **not** open the window. After I sent "hola" at 09:55, the same command succeeded (`wamid` returned).
 - **Proposal**: count the activation message as an inbound message that opens the window, or say in the activation confirmation that the user must send one more message.
+
+### F10 — Inbound `processing_status` stays `pending` after the webhook succeeded (L)
+- **What**: Both inbound messages of the end-to-end test (text, then the "Pay" button reply) show `kapso.processing_status: "pending"` in MCP `list_whatsapp_messages`. My webhook returned 200 and processed both, as the outbound replies and the local DB confirm. Outbound messages show `processed`.
+- **Evidence**: MCP `list_whatsapp_messages` since 15:30Z on 2026-10-25; local `processedmessage` table has 2 rows.
+- **Impact**: An agent debugging delivery reads "pending" as "my webhook didn't handle it". It's unclear what the field tracks (Kapso workflows? agents?) and the docs don't say.
+- **Open question**: which consumer is expected to move inbound messages out of `pending` when you use your own webhook.
